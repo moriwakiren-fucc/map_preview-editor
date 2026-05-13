@@ -11,19 +11,19 @@
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
   :root {
-    --bg: #0f0f11;
-    --bg2: #17171a;
-    --bg3: #1e1e22;
-    --border: #2a2a30;
-    --border2: #3a3a42;
-    --text: #e8e8ec;
-    --text2: #8888a0;
-    --text3: #555560;
-    --accent: #5b8eff;
-    --accent2: #7b5ea7;
-    --success: #3ecf8e;
-    --warn: #f5a623;
-    --danger: #e05252;
+    --bg: #f5f6f8;
+    --bg2: #ffffff;
+    --bg3: #eef0f3;
+    --border: #dde0e6;
+    --border2: #c8ccd4;
+    --text: #1a1d23;
+    --text2: #5a6072;
+    --text3: #94a0b4;
+    --accent: #2563eb;
+    --accent2: #7c3aed;
+    --success: #059669;
+    --warn: #d97706;
+    --danger: #dc2626;
     --mono: 'IBM Plex Mono', monospace;
     --sans: 'IBM Plex Sans JP', sans-serif;
   }
@@ -120,7 +120,7 @@
 
   /* ── Map ── */
   #map-wrap { flex: 1; position: relative; overflow: hidden; }
-  #map { width: 100%; height: 100%; background: #1a1a1f; }
+  #map { width: 100%; height: 100%; background: #e8eaed; }
 
   /* ── Right panel ── */
   #right-panel {
@@ -302,7 +302,7 @@
   #dropzone {
     position: absolute;
     inset: 0;
-    background: rgba(15,15,17,0.85);
+    background: rgba(245,246,248,0.88);
     display: none;
     align-items: center;
     justify-content: center;
@@ -321,7 +321,7 @@
     position: absolute;
     bottom: 30px;
     right: 10px;
-    background: rgba(15,15,17,0.92);
+    background: rgba(255,255,255,0.95);
     border: 1px solid var(--border);
     border-radius: 6px;
     padding: 10px 12px;
@@ -368,7 +368,7 @@
     top: 10px;
     left: 50%;
     transform: translateX(-50%);
-    background: rgba(15,15,17,0.88);
+    background: rgba(255,255,255,0.92);
     border: 1px solid var(--border2);
     border-radius: 20px;
     padding: 6px 16px;
@@ -380,11 +380,51 @@
     pointer-events: none;
   }
 
-  /* Leaflet dark overrides */
-  .leaflet-control-attribution { background: rgba(15,15,17,0.7) !important; color: #555 !important; }
+  /* Leaflet light overrides */
+  .leaflet-control-attribution { background: rgba(255,255,255,0.8) !important; color: #888 !important; }
   .leaflet-control-attribution a { color: #666 !important; }
   .leaflet-bar a { background: var(--bg2) !important; border-color: var(--border) !important; color: var(--text2) !important; }
   .leaflet-bar a:hover { background: var(--bg3) !important; color: var(--text) !important; }
+
+  /* Progress bar */
+  #progress-wrap {
+    display: none;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg3);
+  }
+  #progress-bar-bg {
+    height: 6px;
+    background: var(--border2);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  #progress-bar {
+    height: 100%;
+    background: var(--accent);
+    border-radius: 3px;
+    width: 0%;
+    transition: width 0.15s;
+  }
+  #progress-label {
+    font-size: 11px;
+    font-family: var(--mono);
+    color: var(--text3);
+    margin-bottom: 5px;
+  }
+
+  /* Warning banner */
+  #warn-banner {
+    display: none;
+    background: #fef9c3;
+    border: 1px solid #fde047;
+    border-radius: 5px;
+    padding: 8px 12px;
+    font-size: 11px;
+    color: #854d0e;
+    margin: 8px 14px;
+    line-height: 1.5;
+  }
 </style>
 </head>
 <body>
@@ -436,6 +476,11 @@
   <!-- Left panel: layers -->
   <div id="left-panel">
     <div class="panel-header">Layers</div>
+    <div id="progress-wrap">
+      <div id="progress-label">読み込み中...</div>
+      <div id="progress-bar-bg"><div id="progress-bar"></div></div>
+    </div>
+    <div id="warn-banner"></div>
     <div class="panel-scroll">
       <div class="section" id="layer-list-wrap">
         <div class="empty" id="layer-empty">SHPまたはGeoJSONを<br>ドロップしてください</div>
@@ -487,7 +532,7 @@
         </div>
         <div class="ctrl-row">
           <div class="ctrl-label">線の色</div>
-          <input type="color" id="man-stroke" value="#ffffff" oninput="applyManualStyle()">
+          <input type="color" id="man-stroke" value="#555555" oninput="applyManualStyle()">
         </div>
         <div class="ctrl-row">
           <div class="ctrl-label">線の太さ <span id="man-weight-val">1</span></div>
@@ -533,7 +578,7 @@
         <div class="section-title">描画スタイル（全レイヤー共通）</div>
         <div class="ctrl-row">
           <div class="ctrl-label">線の色</div>
-          <input type="color" id="base-stroke" value="#ffffff" oninput="applyBaseStyle()">
+          <input type="color" id="base-stroke" value="#444444" oninput="applyBaseStyle()">
         </div>
         <div class="ctrl-row">
           <div class="ctrl-label">線の太さ <span id="base-weight-val">1</span></div>
@@ -598,7 +643,7 @@ const autoColors = [
 const map = L.map('map', { zoomControl: true, attributionControl: true })
   .setView([36.5, 138], 5);
 
-L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
   attribution: '© OpenStreetMap © CARTO',
   maxZoom: 19,
   subdomains: 'abcd'
@@ -657,47 +702,158 @@ mapWrap.addEventListener('drop', async e => {
   for (const f of e.dataTransfer.files) await loadFile(f);
 });
 
+// ── Large file constants ────────────────────────────────────────────────────
+const MAX_FEATURES_RENDER = 50000; // 描画上限フィーチャー数
+const CHUNK_SIZE = 500;            // 一度にLeafletへ追加するフィーチャー数
+
+function showProgress(label, pct) {
+  const wrap = document.getElementById('progress-wrap');
+  wrap.style.display = '';
+  document.getElementById('progress-label').textContent = label;
+  document.getElementById('progress-bar').style.width = pct + '%';
+}
+function hideProgress() {
+  document.getElementById('progress-wrap').style.display = 'none';
+  document.getElementById('progress-bar').style.width = '0%';
+}
+function showWarn(msg) {
+  const el = document.getElementById('warn-banner');
+  el.style.display = msg ? '' : 'none';
+  el.textContent = msg;
+}
+
 async function loadFile(file) {
   const name = file.name.replace(/\.[^.]+$/, '');
-  setStatus(`読み込み中: ${file.name}...`);
+  const mb = (file.size / 1024 / 1024).toFixed(1);
+  setStatus(`読み込み中: ${file.name} (${mb} MB)...`);
+  showProgress(`解析中: ${file.name}`, 5);
+  showWarn('');
   try {
     if (file.name.match(/\.(json|geojson)$/i)) {
-      const text = await file.text();
-      addLayer(JSON.parse(text), name);
+      await loadLargeGeoJSON(file, name);
     } else if (file.name.match(/\.zip$/i)) {
+      showProgress('Shapefile 解凍中...', 20);
       const buf = await file.arrayBuffer();
+      showProgress('GeoJSON変換中...', 50);
       const geojson = await shp(buf);
-      if (Array.isArray(geojson)) geojson.forEach((g, i) => addLayer(g, `${name}_${i+1}`));
-      else addLayer(geojson, name);
+      showProgress('レイヤー追加中...', 80);
+      if (Array.isArray(geojson)) {
+        for (let i = 0; i < geojson.length; i++) await addLayerAsync(geojson[i], `${name}_${i+1}`);
+      } else {
+        await addLayerAsync(geojson, name);
+      }
+      hideProgress();
     } else {
       setStatus('対応形式: .zip (Shapefile), .geojson, .json');
+      hideProgress();
     }
   } catch (err) {
     setStatus('読み込みエラー: ' + err.message);
+    hideProgress();
     console.error(err);
   }
 }
 
-// ── Add layer ──────────────────────────────────────────────────────────────
-function addLayer(geojson, name) {
+async function loadLargeGeoJSON(file, name) {
+  // StreamingReader でメモリを節約しながら読む
+  // ブラウザのメモリ限界を避けるため、text()をchunk的に処理
+  const WARN_MB = 100;
+  const fileMB = file.size / 1024 / 1024;
+
+  showProgress(`テキスト読み込み中 (${fileMB.toFixed(0)} MB)...`, 10);
+
+  // 大きいファイルはReadableStreamで少しずつ読む
+  let text;
+  if (file.size > 50 * 1024 * 1024) {
+    // 大容量: stream経由で読み、進捗表示
+    text = await readFileWithProgress(file);
+  } else {
+    text = await file.text();
+  }
+
+  showProgress('JSON解析中...', 60);
+  // 非同期にしてUIをブロックしない
+  await yieldToUI();
+
+  let geojson;
+  try {
+    geojson = JSON.parse(text);
+  } catch(e) {
+    throw new Error('JSON解析失敗: ' + e.message);
+  }
+  text = null; // GCに解放
+
+  showProgress('レイヤー追加中...', 80);
+  await yieldToUI();
+  await addLayerAsync(geojson, name);
+  hideProgress();
+}
+
+async function readFileWithProgress(file) {
+  const reader = file.stream().getReader();
+  const decoder = new TextDecoder();
+  let chunks = [];
+  let loaded = 0;
+  const total = file.size;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(decoder.decode(value, { stream: true }));
+    loaded += value.length;
+    const pct = Math.round(10 + (loaded / total) * 45);
+    showProgress(`読み込み中... ${(loaded/1024/1024).toFixed(0)}/${(total/1024/1024).toFixed(0)} MB`, pct);
+    if (loaded % (5 * 1024 * 1024) < value.length) await yieldToUI(); // 5MBごとにUI解放
+  }
+  chunks.push(decoder.decode()); // flush
+  return chunks.join('');
+}
+
+function yieldToUI() {
+  return new Promise(resolve => setTimeout(resolve, 0));
+}
+
+// ── Add layer (async, chunked rendering) ───────────────────────────────────
+async function addLayerAsync(geojson, name) {
   if (!geojson || !geojson.features) {
     setStatus('有効なGeoJSONではありません');
     return;
   }
+
+  const totalFeatures = geojson.features.length;
+  let renderGeojson = geojson;
+  let truncated = false;
+
+  if (totalFeatures > MAX_FEATURES_RENDER) {
+    truncated = true;
+    // ランダムサンプリングで上限まで絞る
+    const sampled = [];
+    const step = totalFeatures / MAX_FEATURES_RENDER;
+    for (let i = 0; i < MAX_FEATURES_RENDER; i++) {
+      sampled.push(geojson.features[Math.floor(i * step)]);
+    }
+    renderGeojson = { type: 'FeatureCollection', features: sampled };
+    showWarn(`⚠ フィーチャー数が多いため、${MAX_FEATURES_RENDER.toLocaleString()} 件に間引いて表示しています（元: ${totalFeatures.toLocaleString()} 件）。GeoJSONエクスポートは全件含みます。`);
+  }
+
   const id = ++layerCounter;
   const color = autoColors[(id - 1) % autoColors.length];
   const layerData = {
-    id, name, geojson,
+    id, name,
+    geojson: renderGeojson,
+    fullGeojson: truncated ? geojson : null, // エクスポート用に元データ保持
+    totalFeatures,
     visible: true,
-    style: { fill: color, fillOpacity: 0.6, stroke: '#ffffff', weight: 1, pointSize: 6 },
+    style: { fill: color, fillOpacity: 0.6, stroke: '#444444', weight: 0.8, pointSize: 5 },
     leafLayer: null,
     featureMap: new Map(),
-    columns: getColumns(geojson),
+    columns: getColumns(renderGeojson),
     catColorMap: {},
     colorMode: 'manual',
   };
 
-  layerData.leafLayer = buildLeafLayer(layerData);
+  // チャンク分割してLeafletレイヤーを構築
+  layerData.leafLayer = await buildLeafLayerChunked(layerData);
   layerData.leafLayer.addTo(map);
   layers.push(layerData);
 
@@ -706,22 +862,42 @@ function addLayer(geojson, name) {
   selectedLayerId = id;
   updateColumnSelects();
   renderLayerList();
-  setStatus(`読み込み完了: ${name} (${geojson.features.length} フィーチャー)`);
   document.getElementById('layer-empty').style.display = 'none';
+
+  const displayCount = renderGeojson.features.length;
+  setStatus(`読み込み完了: ${name} — 表示 ${displayCount.toLocaleString()} / 全 ${totalFeatures.toLocaleString()} フィーチャー`);
 }
 
-function buildLeafLayer(ld) {
-  return L.geoJSON(ld.geojson, {
-    style: f => getFeatureStyle(ld, f),
-    pointToLayer: (f, ll) => L.circleMarker(ll, getFeatureStyle(ld, f)),
-    onEachFeature: (f, l) => {
-      ld.featureMap.set(f, l);
-      l.on('click', e => {
-        L.DomEvent.stopPropagation(e);
-        onFeatureClick(ld, f, l);
-      });
+async function buildLeafLayerChunked(ld) {
+  const group = L.featureGroup();
+  const features = ld.geojson.features;
+  const total = features.length;
+
+  for (let i = 0; i < total; i += CHUNK_SIZE) {
+    const chunk = features.slice(i, i + CHUNK_SIZE);
+    const chunkGJ = { type: 'FeatureCollection', features: chunk };
+
+    L.geoJSON(chunkGJ, {
+      style: f => getFeatureStyle(ld, f),
+      pointToLayer: (f, ll) => L.circleMarker(ll, getFeatureStyle(ld, f)),
+      onEachFeature: (f, l) => {
+        ld.featureMap.set(f, l);
+        l.on('click', e => {
+          L.DomEvent.stopPropagation(e);
+          onFeatureClick(ld, f, l);
+        });
+      }
+    }).eachLayer(l => group.addLayer(l));
+
+    // 50チャンクごとにUIに制御を返す
+    if (i % (CHUNK_SIZE * 50) === 0 && i > 0) {
+      const pct = Math.round(80 + (i / total) * 18);
+      showProgress(`地図に描画中... ${i.toLocaleString()} / ${total.toLocaleString()}`, pct);
+      await yieldToUI();
     }
-  });
+  }
+
+  return group;
 }
 
 function getFeatureStyle(ld, feature) {
@@ -1004,7 +1180,7 @@ function buildCatLegend(ld) {
   const vals = Object.keys(ld.catColorMap).slice(0, 12);
   legendEl.style.display = 'block';
   legendEl.innerHTML = `<div class="legend-title">${ld.catColumn}</div>` +
-    vals.map(v => `<div class="legend-item"><div class="legend-swatch" style="background:${ld.catColorMap[v]}"></div><span style="color:#aaa;font-size:11px">${v || '(空)'}</span></div>`).join('');
+    vals.map(v => `<div class="legend-item"><div class="legend-swatch" style="background:${ld.catColorMap[v]}"></div><span style="color:#555;font-size:11px">${v || '(空)'}</span></div>`).join('');
 }
 
 function buildChoroLegend(ld, col) {
@@ -1020,7 +1196,7 @@ function buildChoroLegend(ld, col) {
     const ci = t * (colors.length - 1);
     const lo = Math.floor(ci), hi = Math.min(lo+1, colors.length-1);
     const c = interpolateColor(colors[lo], colors[hi], ci - lo);
-    html += `<div class="legend-item"><div class="legend-swatch" style="background:${c}"></div><span style="color:#aaa;font-size:11px">${val.toFixed(1)}</span></div>`;
+    html += `<div class="legend-item"><div class="legend-swatch" style="background:${c}"></div><span style="color:#555;font-size:11px">${val.toFixed(1)}</span></div>`;
   }
   legendEl.innerHTML = html;
 }
@@ -1093,14 +1269,14 @@ function deleteSelected() {
 // ── Export GeoJSON ─────────────────────────────────────────────────────────
 function exportGeoJSON() {
   if (!layers.length) { setStatus('エクスポートするレイヤーがありません'); return; }
-  const allFeatures = layers.flatMap(l => l.geojson.features);
+  const allFeatures = layers.flatMap(l => (l.fullGeojson || l.geojson).features);
   const data = JSON.stringify({ type: 'FeatureCollection', features: allFeatures }, null, 2);
   const blob = new Blob([data], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = 'export.geojson';
   a.click();
-  setStatus('GeoJSONを保存しました');
+  setStatus('GeoJSONを保存しました（全フィーチャー含む）');
 }
 
 // ── Export PNG ─────────────────────────────────────────────────────────────
@@ -1113,7 +1289,7 @@ function exportPNG() {
   const ctx = canvas.getContext('2d');
 
   // Background
-  ctx.fillStyle = '#1a1a2e';
+  ctx.fillStyle = '#e8eaed';
   ctx.fillRect(0, 0, W, H);
 
   // Draw each layer
@@ -1162,7 +1338,7 @@ function exportPNG() {
   if (legendEl.style.display !== 'none') {
     const items = legendEl.querySelectorAll('.legend-item');
     const lx = W - 160, ly = H - 30 - items.length * 22 - 30;
-    ctx.fillStyle = 'rgba(15,15,17,0.88)';
+    ctx.fillStyle = 'rgba(255,255,255,0.92)';
     ctx.beginPath();
     roundRect(ctx, lx - 10, ly - 20, 155, items.length * 22 + 36, 6);
     ctx.fill();
@@ -1174,7 +1350,7 @@ function exportPNG() {
       const label = item.querySelector('span');
       ctx.fillStyle = swatch ? swatch.style.background : '#888';
       ctx.fillRect(lx, ly + i * 22, 14, 14);
-      ctx.fillStyle = '#aaa';
+      ctx.fillStyle = '#333';
       ctx.font = '11px sans-serif';
       ctx.fillText(label?.textContent || '', lx + 20, ly + i * 22 + 11);
     });
