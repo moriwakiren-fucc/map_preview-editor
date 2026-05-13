@@ -755,58 +755,182 @@ async function loadFile(file) {
 }
 
 async function loadLargeGeoJSON(file, name) {
-  // StreamingReader でメモリを節約しながら読む
-  // ブラウザのメモリ限界を避けるため、text()をchunk的に処理
-  const WARN_MB = 100;
-  const fileMB = file.size / 1024 / 1024;
+  const fileMB = (file.size / 1024 / 1024).toFixed(0);
+  showProgress(`ストリーム解析中 (${fileMB} MB)...`, 5);
 
-  showProgress(`テキスト読み込み中 (${fileMB.toFixed(0)} MB)...`, 10);
+  // ── ストリーミングJSONパーサー ──────────────────────────────────────────
+  // 文字列全体もオブジェクト全体もメモリに持たず、
+  // "features"配列の各要素だけを1件ずつ取り出す
+  const sampledFeatures = [];   // 表示用（間引き後）
+  const MAX = MAX_FEATURES_RENDER;
+  let totalCount = 0;
+  let columns = new Set();
 
-  // 大きいファイルはReadableStreamで少しずつ読む
-  let text;
-  if (file.size > 50 * 1024 * 1024) {
-    // 大容量: stream経由で読み、進捗表示
-    text = await readFileWithProgress(file);
-  } else {
-    text = await file.text();
-  }
-
-  showProgress('JSON解析中...', 60);
-  // 非同期にしてUIをブロックしない
-  await yieldToUI();
-
-  let geojson;
   try {
-    geojson = JSON.parse(text);
+    await streamParseGeoJSONFeatures(file, (feature, index, bytesRead, totalBytes) => {
+      totalCount++;
+      // プロパティのキーを収集（最初の200件だけで十分）
+      if (index < 200 && feature.properties) {
+        Object.keys(feature.properties).forEach(k => columns.add(k));
+      }
+      // 等間隔サンプリング: ファイル全体を1パスで読みながら決定的に選択
+      // 「reservoir sampling」で件数不明でもMAX件に収まる
+      if (sampledFeatures.length < MAX) {
+        sampledFeatures.push(feature);
+      } else {
+        // reservoir sampling: i番目を確率MAX/iで入れ替え
+        const j = Math.floor(Math.random() * (index + 1));
+        if (j < MAX) sampledFeatures[j] = feature;
+      }
+      // 進捗更新（1000件ごと）
+      if (index % 1000 === 0) {
+        const pct = Math.min(5 + Math.round((bytesRead / totalBytes) * 70), 75);
+        showProgress(`解析中... ${index.toLocaleString()} 件 / ${(bytesRead/1024/1024).toFixed(0)} MB`, pct);
+      }
+    });
   } catch(e) {
-    throw new Error('JSON解析失敗: ' + e.message);
+    throw new Error('GeoJSONストリーム解析エラー: ' + e.message);
   }
-  text = null; // GCに解放
 
-  showProgress('レイヤー追加中...', 80);
+  if (sampledFeatures.length === 0) throw new Error('フィーチャーが見つかりませんでした');
+
+  const truncated = totalCount > MAX;
+  if (truncated) {
+    showWarn(`⚠ ${totalCount.toLocaleString()} 件中 ${MAX.toLocaleString()} 件を表示（残りは省略）。エクスポートは元ファイルをご利用ください。`);
+  }
+
+  const geojson = { type: 'FeatureCollection', features: sampledFeatures };
+
+  showProgress('地図に描画中...', 78);
   await yieldToUI();
-  await addLayerAsync(geojson, name);
+
+  const id = ++layerCounter;
+  const color = autoColors[(id - 1) % autoColors.length];
+  const layerData = {
+    id, name,
+    geojson,
+    fullGeojson: null, // ストリーム読み込み時は元データをメモリに持たない
+    totalFeatures: totalCount,
+    visible: true,
+    style: { fill: color, fillOpacity: 0.6, stroke: '#444444', weight: 0.8, pointSize: 5 },
+    leafLayer: null,
+    featureMap: new Map(),
+    columns: [...columns],
+    catColorMap: {},
+    colorMode: 'manual',
+  };
+
+  layerData.leafLayer = await buildLeafLayerChunked(layerData);
+  layerData.leafLayer.addTo(map);
+  layers.push(layerData);
+
+  try { map.fitBounds(layerData.leafLayer.getBounds().pad(0.05)); } catch(e) {}
+
+  selectedLayerId = id;
+  updateColumnSelects();
+  renderLayerList();
+  document.getElementById('layer-empty').style.display = 'none';
   hideProgress();
+  setStatus(`読み込み完了: ${name} — 表示 ${sampledFeatures.length.toLocaleString()} / 全 ${totalCount.toLocaleString()} 件`);
 }
 
-async function readFileWithProgress(file) {
+// ── ストリーミングJSONパーサー本体 ────────────────────────────────────────
+// ReadableStream を1チャンクずつ読みながら、"features":[...] の中身だけ
+// 手動で字句解析し、完成したfeatureオブジェクトをコールバックへ渡す。
+// 文字列全体・GeoJSONオブジェクト全体をメモリに持たない。
+async function streamParseGeoJSONFeatures(file, onFeature) {
   const reader = file.stream().getReader();
   const decoder = new TextDecoder();
-  let chunks = [];
-  let loaded = 0;
-  const total = file.size;
+  const totalBytes = file.size;
+  let bytesRead = 0;
 
-  while (true) {
+  // ステートマシン
+  let buffer = '';          // 未処理の文字バッファ（最小限だけ保持）
+  let inFeatures = false;   // "features":[  の内側にいるか
+  let depth = 0;            // { } のネスト深度
+  let featureStart = -1;    // 現在のフィーチャー開始位置
+  let featureIndex = 0;
+  let inString = false;
+  let escape = false;
+  let headerScanned = false;
+
+  const SCAN_HEADER = 'features"';  // "features" を探す
+
+  outer: while (true) {
     const { done, value } = await reader.read();
     if (done) break;
-    chunks.push(decoder.decode(value, { stream: true }));
-    loaded += value.length;
-    const pct = Math.round(10 + (loaded / total) * 45);
-    showProgress(`読み込み中... ${(loaded/1024/1024).toFixed(0)}/${(total/1024/1024).toFixed(0)} MB`, pct);
-    if (loaded % (5 * 1024 * 1024) < value.length) await yieldToUI(); // 5MBごとにUI解放
+    bytesRead += value.length;
+    buffer += decoder.decode(value, { stream: true });
+
+    // "features":[ を探す（まだ見つかっていない場合）
+    if (!inFeatures && !headerScanned) {
+      const idx = buffer.indexOf(SCAN_HEADER);
+      if (idx !== -1) {
+        // "features": の後の [ を探す
+        let j = idx + SCAN_HEADER.length;
+        while (j < buffer.length && buffer[j] !== '[') j++;
+        if (j < buffer.length) {
+          buffer = buffer.slice(j + 1); // '[' の次から開始
+          inFeatures = true;
+          depth = 0;
+          featureStart = -1;
+        }
+      }
+      // バッファが大きくなりすぎないよう先頭を切り捨て
+      if (!inFeatures && buffer.length > 2000) {
+        buffer = buffer.slice(buffer.length - 1000);
+      }
+    }
+
+    if (!inFeatures) continue;
+
+    // フィーチャー配列内を1文字ずつ走査
+    let i = 0;
+    while (i < buffer.length) {
+      const ch = buffer[i];
+
+      if (escape) { escape = false; i++; continue; }
+      if (inString) {
+        if (ch === '\\') { escape = true; }
+        else if (ch === '"') { inString = false; }
+        i++; continue;
+      }
+
+      if (ch === '"') { inString = true; i++; continue; }
+
+      if (ch === '{') {
+        if (depth === 0) featureStart = i;
+        depth++;
+      } else if (ch === '}') {
+        depth--;
+        if (depth === 0 && featureStart !== -1) {
+          // フィーチャー1件完成
+          const featureStr = buffer.slice(featureStart, i + 1);
+          try {
+            const feature = JSON.parse(featureStr);
+            await onFeature(feature, featureIndex, bytesRead, totalBytes);
+            featureIndex++;
+            // UI解放（2000件ごと）
+            if (featureIndex % 2000 === 0) await yieldToUI();
+          } catch(e) { /* 壊れたフィーチャーはスキップ */ }
+          featureStart = -1;
+        }
+      } else if (ch === ']' && depth === 0) {
+        // features配列終了
+        break outer;
+      }
+      i++;
+    }
+
+    // 処理済み部分をバッファから除去（featureStartより前は不要）
+    if (featureStart > 0) {
+      buffer = buffer.slice(featureStart);
+      featureStart = 0;
+    } else if (featureStart === -1 && depth === 0) {
+      // フィーチャー間のカンマ・スペースは捨てる
+      buffer = buffer.slice(i);
+    }
   }
-  chunks.push(decoder.decode()); // flush
-  return chunks.join('');
 }
 
 function yieldToUI() {
@@ -889,12 +1013,10 @@ async function buildLeafLayerChunked(ld) {
       }
     }).eachLayer(l => group.addLayer(l));
 
-    // 50チャンクごとにUIに制御を返す
-    if (i % (CHUNK_SIZE * 50) === 0 && i > 0) {
-      const pct = Math.round(80 + (i / total) * 18);
-      showProgress(`地図に描画中... ${i.toLocaleString()} / ${total.toLocaleString()}`, pct);
-      await yieldToUI();
-    }
+    // 毎チャンクUIに制御を返す（タブが落ちないよう）
+    const pct = Math.round(78 + (i / total) * 20);
+    showProgress(`地図に描画中... ${Math.min(i + CHUNK_SIZE, total).toLocaleString()} / ${total.toLocaleString()}`, pct);
+    await yieldToUI();
   }
 
   return group;
