@@ -1,0 +1,1238 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Shapefile Editor</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+JP:wght@300;400;500&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0f0f11;
+    --bg2: #17171a;
+    --bg3: #1e1e22;
+    --border: #2a2a30;
+    --border2: #3a3a42;
+    --text: #e8e8ec;
+    --text2: #8888a0;
+    --text3: #555560;
+    --accent: #5b8eff;
+    --accent2: #7b5ea7;
+    --success: #3ecf8e;
+    --warn: #f5a623;
+    --danger: #e05252;
+    --mono: 'IBM Plex Mono', monospace;
+    --sans: 'IBM Plex Sans JP', sans-serif;
+  }
+
+  body {
+    font-family: var(--sans);
+    background: var(--bg);
+    color: var(--text);
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* ── Header ── */
+  #header {
+    height: 48px;
+    display: flex;
+    align-items: center;
+    gap: 0;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    background: var(--bg2);
+  }
+  #header .logo {
+    padding: 0 20px;
+    font-family: var(--mono);
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text);
+    letter-spacing: 0.04em;
+    border-right: 1px solid var(--border);
+    height: 100%;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  #header .logo span { color: var(--accent); }
+  .toolbar {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 0 12px;
+    flex: 1;
+    height: 100%;
+  }
+  .tb-group {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 0 8px;
+    border-right: 1px solid var(--border);
+    height: 100%;
+  }
+  .tb-group:last-child { border-right: none; }
+  .tb-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 10px;
+    font-family: var(--sans);
+    font-size: 12px;
+    font-weight: 400;
+    color: var(--text2);
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+  }
+  .tb-btn:hover { color: var(--text); background: var(--bg3); border-color: var(--border); }
+  .tb-btn.active { color: var(--accent); background: rgba(91,142,255,0.12); border-color: rgba(91,142,255,0.3); }
+  .tb-btn.primary { color: var(--accent); }
+  .tb-btn svg { width: 14px; height: 14px; flex-shrink: 0; }
+
+  /* ── Layout ── */
+  #body {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  /* ── Left panel ── */
+  #left-panel {
+    width: 240px;
+    flex-shrink: 0;
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    background: var(--bg2);
+    overflow: hidden;
+  }
+
+  /* ── Map ── */
+  #map-wrap { flex: 1; position: relative; overflow: hidden; }
+  #map { width: 100%; height: 100%; background: #1a1a1f; }
+
+  /* ── Right panel ── */
+  #right-panel {
+    width: 260px;
+    flex-shrink: 0;
+    border-left: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    background: var(--bg2);
+    overflow: hidden;
+  }
+
+  .panel-header {
+    padding: 10px 14px;
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 500;
+    color: var(--text3);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .panel-scroll { flex: 1; overflow-y: auto; }
+  .panel-scroll::-webkit-scrollbar { width: 4px; }
+  .panel-scroll::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+  .section {
+    border-bottom: 1px solid var(--border);
+    padding: 12px 14px;
+  }
+  .section-title {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text3);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+  }
+
+  /* Layer list */
+  .layer-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 8px;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 12px;
+    color: var(--text2);
+    transition: all 0.12s;
+    border: 1px solid transparent;
+  }
+  .layer-item:hover { background: var(--bg3); color: var(--text); }
+  .layer-item.selected { background: rgba(91,142,255,0.1); border-color: rgba(91,142,255,0.25); color: var(--text); }
+  .layer-swatch { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; border: 1px solid rgba(255,255,255,0.1); }
+  .layer-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .layer-vis { font-size: 11px; color: var(--text3); cursor: pointer; padding: 2px; }
+  .layer-vis:hover { color: var(--text2); }
+
+  /* Controls */
+  .ctrl-row { margin-bottom: 10px; }
+  .ctrl-label {
+    font-size: 11px;
+    color: var(--text3);
+    margin-bottom: 4px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .ctrl-label span { font-family: var(--mono); color: var(--text2); }
+  input[type=range] {
+    width: 100%;
+    height: 3px;
+    -webkit-appearance: none;
+    background: var(--border2);
+    border-radius: 2px;
+    outline: none;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 13px; height: 13px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+  }
+  input[type=color] {
+    width: 100%;
+    height: 30px;
+    border: 1px solid var(--border2);
+    border-radius: 5px;
+    background: var(--bg3);
+    cursor: pointer;
+    padding: 2px 4px;
+  }
+  select {
+    width: 100%;
+    padding: 6px 8px;
+    font-family: var(--sans);
+    font-size: 12px;
+    color: var(--text);
+    background: var(--bg3);
+    border: 1px solid var(--border2);
+    border-radius: 5px;
+    outline: none;
+    cursor: pointer;
+  }
+  select option { background: var(--bg3); }
+
+  .color-scheme-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 4px;
+    margin-top: 6px;
+  }
+  .cs-btn {
+    height: 18px;
+    border-radius: 3px;
+    cursor: pointer;
+    border: 2px solid transparent;
+    transition: border-color 0.12s;
+  }
+  .cs-btn:hover, .cs-btn.active { border-color: var(--text); }
+
+  .tab-row {
+    display: flex;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .tab {
+    flex: 1;
+    padding: 9px 0;
+    text-align: center;
+    font-size: 11px;
+    font-family: var(--mono);
+    color: var(--text3);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: all 0.12s;
+  }
+  .tab:hover { color: var(--text2); }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
+  /* Category color editor */
+  .cat-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 0;
+    font-size: 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .cat-item:last-child { border-bottom: none; }
+  .cat-color { width: 22px; height: 22px; border-radius: 3px; border: 1px solid var(--border2); cursor: pointer; flex-shrink: 0; }
+  .cat-label { flex: 1; color: var(--text2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cat-count { font-family: var(--mono); font-size: 10px; color: var(--text3); }
+
+  /* Status bar */
+  #statusbar {
+    height: 26px;
+    display: flex;
+    align-items: center;
+    padding: 0 14px;
+    border-top: 1px solid var(--border);
+    background: var(--bg2);
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text3);
+    flex-shrink: 0;
+    gap: 20px;
+  }
+  #status-msg { flex: 1; }
+  #status-coords { color: var(--text3); }
+
+  /* Drop zone */
+  #dropzone {
+    position: absolute;
+    inset: 0;
+    background: rgba(15,15,17,0.85);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 12px;
+    z-index: 1000;
+    border: 2px dashed var(--accent);
+    border-radius: 4px;
+  }
+  #dropzone.active { display: flex; }
+  #dropzone p { font-size: 15px; color: var(--accent); font-family: var(--mono); }
+  #dropzone small { font-size: 12px; color: var(--text3); }
+
+  /* Legend */
+  #legend {
+    position: absolute;
+    bottom: 30px;
+    right: 10px;
+    background: rgba(15,15,17,0.92);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px 12px;
+    z-index: 500;
+    min-width: 140px;
+    display: none;
+    font-size: 11px;
+  }
+  #legend-title { font-family: var(--mono); font-size: 10px; color: var(--text3); margin-bottom: 8px; }
+  .legend-item { display: flex; align-items: center; gap: 7px; margin-bottom: 5px; }
+  .legend-swatch { width: 14px; height: 14px; border-radius: 2px; flex-shrink: 0; }
+
+  /* Attr table */
+  .attr-row { display: flex; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--border); font-size: 11px; }
+  .attr-key { color: var(--text3); font-family: var(--mono); width: 80px; flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; }
+  .attr-val { color: var(--text2); flex: 1; overflow: hidden; text-overflow: ellipsis; }
+
+  /* Empty state */
+  .empty {
+    padding: 20px 14px;
+    font-size: 12px;
+    color: var(--text3);
+    line-height: 1.7;
+  }
+
+  /* Mini button */
+  .mini-btn {
+    padding: 5px 10px;
+    font-size: 11px;
+    font-family: var(--mono);
+    background: var(--bg3);
+    border: 1px solid var(--border2);
+    border-radius: 4px;
+    color: var(--text2);
+    cursor: pointer;
+    transition: all 0.12s;
+  }
+  .mini-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .mini-btn.full { width: 100%; margin-top: 6px; }
+
+  /* Draw hint */
+  #draw-hint {
+    position: absolute;
+    top: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(15,15,17,0.88);
+    border: 1px solid var(--border2);
+    border-radius: 20px;
+    padding: 6px 16px;
+    font-size: 12px;
+    color: var(--text2);
+    z-index: 500;
+    display: none;
+    font-family: var(--mono);
+    pointer-events: none;
+  }
+
+  /* Leaflet dark overrides */
+  .leaflet-control-attribution { background: rgba(15,15,17,0.7) !important; color: #555 !important; }
+  .leaflet-control-attribution a { color: #666 !important; }
+  .leaflet-bar a { background: var(--bg2) !important; border-color: var(--border) !important; color: var(--text2) !important; }
+  .leaflet-bar a:hover { background: var(--bg3) !important; color: var(--text) !important; }
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<div id="header">
+  <div class="logo"><span>//</span> SHP.EDITOR</div>
+  <div class="toolbar">
+    <div class="tb-group">
+      <button class="tb-btn primary" id="btn-upload" onclick="document.getElementById('file-input').click()">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2v8M5 5l3-3 3 3M3 11v2h10v-2"/></svg>
+        SHP / GeoJSON を開く
+      </button>
+      <input type="file" id="file-input" accept=".zip,.shp,.geojson,.json" multiple style="display:none">
+    </div>
+    <div class="tb-group">
+      <button class="tb-btn" id="btn-sel" onclick="setTool('select')">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 2l10 6-5 1.5L6.5 15z"/></svg>選択
+      </button>
+      <button class="tb-btn" id="btn-polygon" onclick="setTool('polygon')">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><polygon points="8,2 14,6 12,13 4,13 2,6"/></svg>ポリゴン
+      </button>
+      <button class="tb-btn" id="btn-line" onclick="setTool('line')">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 13L14 3"/></svg>ライン
+      </button>
+      <button class="tb-btn" id="btn-point" onclick="setTool('point')">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="3"/><path d="M8 2v1M8 13v1M2 8h1M13 8h1"/></svg>ポイント
+      </button>
+    </div>
+    <div class="tb-group">
+      <button class="tb-btn" id="btn-delete" onclick="deleteSelected()">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 4h10M6 4V3h4v1M5 4v9h6V4"/></svg>削除
+      </button>
+    </div>
+    <div class="tb-group">
+      <button class="tb-btn" onclick="exportGeoJSON()">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2v8M5 11l3 3 3-3M3 13h10"/></svg>GeoJSON
+      </button>
+      <button class="tb-btn" onclick="exportPNG()">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="12" height="12" rx="1"/><path d="M2 10l3-3 3 3 2-2 4 4"/></svg>PNG出力
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Body -->
+<div id="body">
+
+  <!-- Left panel: layers -->
+  <div id="left-panel">
+    <div class="panel-header">Layers</div>
+    <div class="panel-scroll">
+      <div class="section" id="layer-list-wrap">
+        <div class="empty" id="layer-empty">SHPまたはGeoJSONを<br>ドロップしてください</div>
+        <div id="layer-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Map -->
+  <div id="map-wrap">
+    <div id="map"></div>
+    <div id="dropzone">
+      <p>ファイルをドロップ</p>
+      <small>.zip (Shapefile) / .geojson / .json</small>
+    </div>
+    <div id="draw-hint"></div>
+    <div id="legend"></div>
+  </div>
+
+  <!-- Right panel: style -->
+  <div id="right-panel">
+    <div class="tab-row">
+      <div class="tab active" data-tab="color" onclick="switchTab('color')">色塗り</div>
+      <div class="tab" data-tab="base" onclick="switchTab('base')">基本スタイル</div>
+      <div class="tab" data-tab="attr" onclick="switchTab('attr')">属性</div>
+    </div>
+
+    <!-- COLOR TAB -->
+    <div id="tab-color" class="tab-content active panel-scroll">
+
+      <div class="section">
+        <div class="section-title">色塗りモード</div>
+        <select id="color-mode" onchange="onColorModeChange()">
+          <option value="manual">手動 — 全体に単色</option>
+          <option value="category">カテゴリ列で色分け</option>
+          <option value="choropleth">コロプレス（数値列）</option>
+        </select>
+      </div>
+
+      <!-- Manual mode -->
+      <div class="section" id="mode-manual">
+        <div class="ctrl-row">
+          <div class="ctrl-label">塗りつぶし色</div>
+          <input type="color" id="man-fill" value="#3ecf8e" oninput="applyManualStyle()">
+        </div>
+        <div class="ctrl-row">
+          <div class="ctrl-label">透明度 <span id="man-opacity-val">0.6</span></div>
+          <input type="range" id="man-opacity" min="0" max="1" step="0.05" value="0.6" oninput="document.getElementById('man-opacity-val').textContent=this.value;applyManualStyle()">
+        </div>
+        <div class="ctrl-row">
+          <div class="ctrl-label">線の色</div>
+          <input type="color" id="man-stroke" value="#ffffff" oninput="applyManualStyle()">
+        </div>
+        <div class="ctrl-row">
+          <div class="ctrl-label">線の太さ <span id="man-weight-val">1</span></div>
+          <input type="range" id="man-weight" min="0" max="6" step="0.5" value="1" oninput="document.getElementById('man-weight-val').textContent=this.value;applyManualStyle()">
+        </div>
+      </div>
+
+      <!-- Category mode -->
+      <div class="section" id="mode-category" style="display:none">
+        <div class="ctrl-row">
+          <div class="ctrl-label">対象列</div>
+          <select id="cat-column" onchange="buildCategoryColors()"></select>
+        </div>
+        <div id="cat-color-list" style="margin-top:8px"></div>
+        <button class="mini-btn full" onclick="randomizeCategoryColors()">ランダム配色</button>
+      </div>
+
+      <!-- Choropleth mode -->
+      <div class="section" id="mode-choropleth" style="display:none">
+        <div class="ctrl-row">
+          <div class="ctrl-label">数値列</div>
+          <select id="choro-column" onchange="applyChoropleth()"></select>
+        </div>
+        <div class="ctrl-row">
+          <div class="ctrl-label">カラースキーム</div>
+          <div class="color-scheme-grid" id="scheme-grid"></div>
+        </div>
+        <div class="ctrl-row" style="margin-top:8px">
+          <div class="ctrl-label">ステップ数 <span id="choro-steps-val">5</span></div>
+          <input type="range" id="choro-steps" min="3" max="9" step="1" value="5" oninput="document.getElementById('choro-steps-val').textContent=this.value;applyChoropleth()">
+        </div>
+        <div class="ctrl-row">
+          <div class="ctrl-label">透明度 <span id="choro-opacity-val">0.75</span></div>
+          <input type="range" id="choro-opacity" min="0.1" max="1" step="0.05" value="0.75" oninput="document.getElementById('choro-opacity-val').textContent=this.value;applyChoropleth()">
+        </div>
+      </div>
+
+    </div>
+
+    <!-- BASE STYLE TAB -->
+    <div id="tab-base" class="tab-content panel-scroll" style="display:none">
+      <div class="section">
+        <div class="section-title">描画スタイル（全レイヤー共通）</div>
+        <div class="ctrl-row">
+          <div class="ctrl-label">線の色</div>
+          <input type="color" id="base-stroke" value="#ffffff" oninput="applyBaseStyle()">
+        </div>
+        <div class="ctrl-row">
+          <div class="ctrl-label">線の太さ <span id="base-weight-val">1</span></div>
+          <input type="range" id="base-weight" min="0" max="6" step="0.5" value="1" oninput="document.getElementById('base-weight-val').textContent=this.value;applyBaseStyle()">
+        </div>
+        <div class="ctrl-row">
+          <div class="ctrl-label">ポイントサイズ <span id="base-ptsize-val">6</span></div>
+          <input type="range" id="base-ptsize" min="2" max="20" step="1" value="6" oninput="document.getElementById('base-ptsize-val').textContent=this.value;applyBaseStyle()">
+        </div>
+      </div>
+    </div>
+
+    <!-- ATTR TAB -->
+    <div id="tab-attr" class="tab-content panel-scroll" style="display:none">
+      <div class="section">
+        <div id="attr-content" class="empty">フィーチャーを選択すると属性が表示されます</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Status bar -->
+<div id="statusbar">
+  <div id="status-msg">準備完了 — ファイルを開くかドラッグ&ドロップ</div>
+  <div id="status-coords"></div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/shpjs@4.0.4/dist/shp.min.js"></script>
+<script>
+// ── State ──────────────────────────────────────────────────────────────────
+let layers = [];
+let selectedLayerId = null;
+let selectedFeatureLayer = null;
+let tool = 'select';
+let drawPts = [];
+let drawPolyline = null;
+let drawTempMarkers = [];
+let layerCounter = 0;
+let activeScheme = 0;
+
+const colorSchemes = [
+  { name: 'Blue', colors: ['#cce5ff','#99caff','#66afff','#3393ff','#0066cc','#004d99','#003366'] },
+  { name: 'Green', colors: ['#ccf5e0','#99ebc1','#66e1a2','#33d784','#00a855','#007a3d','#005126'] },
+  { name: 'Orange', colors: ['#fff0cc','#ffe099','#ffd066','#ffbf33','#cc8800','#996600','#664400'] },
+  { name: 'Purple', colors: ['#efe6ff','#ccb3ff','#aa80ff','#8844ff','#6600cc','#4d0099','#330066'] },
+  { name: 'Red', colors: ['#ffe6e6','#ffcccc','#ff9999','#ff4444','#cc0000','#990000','#660000'] },
+  { name: 'Teal', colors: ['#ccf5f5','#99eded','#66e4e4','#33dcdc','#00aaaa','#007f7f','#005555'] },
+  { name: 'Warm', colors: ['#fff3cc','#ffd966','#ff9900','#ff6600','#cc3300','#991100','#550000'] },
+  { name: 'Cool', colors: ['#eaf4ff','#b3d9ff','#66b5ff','#1a91ff','#0055cc','#003d99','#002266'] },
+  { name: 'Gray', colors: ['#f5f5f5','#d9d9d9','#bfbfbf','#999999','#666666','#404040','#1a1a1a'] },
+  { name: 'Sunset', colors: ['#fff0cc','#ffcc66','#ff9933','#ff5500','#cc1100','#880066','#440033'] },
+];
+
+const autoColors = [
+  '#3ecf8e','#5b8eff','#f5a623','#e05252','#a78bfa','#38bdf8','#fb923c','#34d399',
+  '#f472b6','#60a5fa','#fbbf24','#4ade80','#c084fc','#fb7185','#22d3ee',
+];
+
+// ── Map ────────────────────────────────────────────────────────────────────
+const map = L.map('map', { zoomControl: true, attributionControl: true })
+  .setView([36.5, 138], 5);
+
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+  attribution: '© OpenStreetMap © CARTO',
+  maxZoom: 19,
+  subdomains: 'abcd'
+}).addTo(map);
+
+map.on('mousemove', e => {
+  document.getElementById('status-coords').textContent =
+    `${e.latlng.lat.toFixed(5)}, ${e.latlng.lng.toFixed(5)}`;
+});
+
+// ── Color schemes grid ─────────────────────────────────────────────────────
+function buildSchemeGrid() {
+  const grid = document.getElementById('scheme-grid');
+  grid.innerHTML = '';
+  colorSchemes.forEach((s, i) => {
+    const btn = document.createElement('div');
+    btn.className = 'cs-btn' + (i === activeScheme ? ' active' : '');
+    btn.title = s.name;
+    btn.style.background = `linear-gradient(to right, ${s.colors[0]}, ${s.colors[Math.floor(s.colors.length/2)]}, ${s.colors[s.colors.length-1]})`;
+    btn.onclick = () => {
+      activeScheme = i;
+      document.querySelectorAll('.cs-btn').forEach((b, j) => b.classList.toggle('active', j === i));
+      applyChoropleth();
+    };
+    grid.appendChild(btn);
+  });
+}
+buildSchemeGrid();
+
+// ── Tab switching ──────────────────────────────────────────────────────────
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+  document.querySelectorAll('.tab-content').forEach(c => {
+    c.classList.toggle('active', c.id === 'tab-' + name);
+    c.style.display = c.id === 'tab-' + name ? 'block' : 'none';
+  });
+}
+
+// ── Status ─────────────────────────────────────────────────────────────────
+function setStatus(msg) { document.getElementById('status-msg').textContent = msg; }
+
+// ── File loading ───────────────────────────────────────────────────────────
+document.getElementById('file-input').onchange = async e => {
+  for (const f of e.target.files) await loadFile(f);
+  e.target.value = '';
+};
+
+// Drag & Drop
+const mapWrap = document.getElementById('map-wrap');
+const dropzone = document.getElementById('dropzone');
+mapWrap.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('active'); });
+mapWrap.addEventListener('dragleave', () => dropzone.classList.remove('active'));
+mapWrap.addEventListener('drop', async e => {
+  e.preventDefault();
+  dropzone.classList.remove('active');
+  for (const f of e.dataTransfer.files) await loadFile(f);
+});
+
+async function loadFile(file) {
+  const name = file.name.replace(/\.[^.]+$/, '');
+  setStatus(`読み込み中: ${file.name}...`);
+  try {
+    if (file.name.match(/\.(json|geojson)$/i)) {
+      const text = await file.text();
+      addLayer(JSON.parse(text), name);
+    } else if (file.name.match(/\.zip$/i)) {
+      const buf = await file.arrayBuffer();
+      const geojson = await shp(buf);
+      if (Array.isArray(geojson)) geojson.forEach((g, i) => addLayer(g, `${name}_${i+1}`));
+      else addLayer(geojson, name);
+    } else {
+      setStatus('対応形式: .zip (Shapefile), .geojson, .json');
+    }
+  } catch (err) {
+    setStatus('読み込みエラー: ' + err.message);
+    console.error(err);
+  }
+}
+
+// ── Add layer ──────────────────────────────────────────────────────────────
+function addLayer(geojson, name) {
+  if (!geojson || !geojson.features) {
+    setStatus('有効なGeoJSONではありません');
+    return;
+  }
+  const id = ++layerCounter;
+  const color = autoColors[(id - 1) % autoColors.length];
+  const layerData = {
+    id, name, geojson,
+    visible: true,
+    style: { fill: color, fillOpacity: 0.6, stroke: '#ffffff', weight: 1, pointSize: 6 },
+    leafLayer: null,
+    featureMap: new Map(),
+    columns: getColumns(geojson),
+    catColorMap: {},
+    colorMode: 'manual',
+  };
+
+  layerData.leafLayer = buildLeafLayer(layerData);
+  layerData.leafLayer.addTo(map);
+  layers.push(layerData);
+
+  try { map.fitBounds(layerData.leafLayer.getBounds().pad(0.05)); } catch(e) {}
+
+  selectedLayerId = id;
+  updateColumnSelects();
+  renderLayerList();
+  setStatus(`読み込み完了: ${name} (${geojson.features.length} フィーチャー)`);
+  document.getElementById('layer-empty').style.display = 'none';
+}
+
+function buildLeafLayer(ld) {
+  return L.geoJSON(ld.geojson, {
+    style: f => getFeatureStyle(ld, f),
+    pointToLayer: (f, ll) => L.circleMarker(ll, getFeatureStyle(ld, f)),
+    onEachFeature: (f, l) => {
+      ld.featureMap.set(f, l);
+      l.on('click', e => {
+        L.DomEvent.stopPropagation(e);
+        onFeatureClick(ld, f, l);
+      });
+    }
+  });
+}
+
+function getFeatureStyle(ld, feature) {
+  const s = ld.style;
+  let fillColor = s.fill;
+  let fillOpacity = s.fillOpacity;
+
+  if (ld.colorMode === 'category' && ld.catColumn) {
+    const val = String(feature.properties?.[ld.catColumn] ?? '');
+    fillColor = ld.catColorMap[val] || '#888';
+  } else if (ld.colorMode === 'choropleth' && ld.choroColumn) {
+    const val = parseFloat(feature.properties?.[ld.choroColumn]);
+    if (!isNaN(val)) fillColor = getChoroplethColor(ld, val);
+  }
+
+  return {
+    fillColor,
+    fillOpacity,
+    color: s.stroke,
+    weight: s.weight,
+    radius: s.pointSize,
+  };
+}
+
+// ── Feature click ──────────────────────────────────────────────────────────
+function onFeatureClick(ld, feature, leafLayer) {
+  selectedLayerId = ld.id;
+  selectedFeatureLayer = { ld, feature, leafLayer };
+  renderLayerList();
+  const props = feature.properties || {};
+  const keys = Object.keys(props);
+  const attrEl = document.getElementById('attr-content');
+  if (keys.length === 0) {
+    attrEl.className = 'empty';
+    attrEl.textContent = '属性データなし';
+  } else {
+    attrEl.className = '';
+    attrEl.innerHTML = keys.map(k =>
+      `<div class="attr-row"><div class="attr-key">${k}</div><div class="attr-val">${props[k] ?? ''}</div></div>`
+    ).join('');
+  }
+  switchTab('attr');
+  setStatus(`選択: ${ld.name} — ${keys.length} 属性`);
+}
+
+// ── Column helpers ─────────────────────────────────────────────────────────
+function getColumns(geojson) {
+  const cols = new Set();
+  geojson.features.forEach(f => Object.keys(f.properties || {}).forEach(k => cols.add(k)));
+  return [...cols];
+}
+
+function getNumericColumns(ld) {
+  return ld.columns.filter(c => ld.geojson.features.some(f => {
+    const v = f.properties?.[c];
+    return v !== null && v !== undefined && !isNaN(parseFloat(v));
+  }));
+}
+
+function updateColumnSelects() {
+  const ld = getSelectedLayer();
+  if (!ld) return;
+  const catSel = document.getElementById('cat-column');
+  const choroSel = document.getElementById('choro-column');
+  catSel.innerHTML = ld.columns.map(c => `<option value="${c}">${c}</option>`).join('');
+  const numCols = getNumericColumns(ld);
+  choroSel.innerHTML = numCols.map(c => `<option value="${c}">${c}</option>`).join('');
+}
+
+// ── Layer list ─────────────────────────────────────────────────────────────
+function renderLayerList() {
+  const list = document.getElementById('layer-list');
+  list.innerHTML = '';
+  [...layers].reverse().forEach(ld => {
+    const item = document.createElement('div');
+    item.className = 'layer-item' + (ld.id === selectedLayerId ? ' selected' : '');
+    item.innerHTML = `
+      <div class="layer-swatch" style="background:${ld.style.fill}"></div>
+      <div class="layer-name">${ld.name}</div>
+      <div class="layer-vis" onclick="event.stopPropagation();toggleVisibility(${ld.id})">${ld.visible ? '●' : '○'}</div>
+    `;
+    item.onclick = () => {
+      selectedLayerId = ld.id;
+      selectedFeatureLayer = null;
+      renderLayerList();
+      updateColumnSelects();
+      // sync UI to layer style
+      const s = ld.style;
+      document.getElementById('man-fill').value = s.fill;
+      document.getElementById('man-opacity').value = s.fillOpacity;
+      document.getElementById('man-opacity-val').textContent = s.fillOpacity;
+      document.getElementById('man-stroke').value = s.stroke;
+      document.getElementById('man-weight').value = s.weight;
+      document.getElementById('man-weight-val').textContent = s.weight;
+      document.getElementById('color-mode').value = ld.colorMode || 'manual';
+      onColorModeChange(false);
+    };
+    list.appendChild(item);
+  });
+}
+
+function toggleVisibility(id) {
+  const ld = layers.find(l => l.id === id);
+  if (!ld) return;
+  ld.visible ? map.removeLayer(ld.leafLayer) : map.addLayer(ld.leafLayer);
+  ld.visible = !ld.visible;
+  renderLayerList();
+}
+
+function getSelectedLayer() { return layers.find(l => l.id === selectedLayerId); }
+
+// ── Color mode ─────────────────────────────────────────────────────────────
+function onColorModeChange(apply = true) {
+  const mode = document.getElementById('color-mode').value;
+  document.getElementById('mode-manual').style.display = mode === 'manual' ? '' : 'none';
+  document.getElementById('mode-category').style.display = mode === 'category' ? '' : 'none';
+  document.getElementById('mode-choropleth').style.display = mode === 'choropleth' ? '' : 'none';
+  const ld = getSelectedLayer();
+  if (!ld) return;
+  ld.colorMode = mode;
+  if (!apply) return;
+  if (mode === 'manual') applyManualStyle();
+  else if (mode === 'category') buildCategoryColors();
+  else if (mode === 'choropleth') applyChoropleth();
+}
+
+// ── Manual style ───────────────────────────────────────────────────────────
+function applyManualStyle() {
+  const ld = getSelectedLayer();
+  if (!ld) return;
+  ld.style.fill = document.getElementById('man-fill').value;
+  ld.style.fillOpacity = parseFloat(document.getElementById('man-opacity').value);
+  ld.style.stroke = document.getElementById('man-stroke').value;
+  ld.style.weight = parseFloat(document.getElementById('man-weight').value);
+  ld.colorMode = 'manual';
+  refreshLayer(ld);
+  hideLegend();
+  renderLayerList();
+}
+
+// ── Category colors ────────────────────────────────────────────────────────
+function buildCategoryColors() {
+  const ld = getSelectedLayer();
+  if (!ld) return;
+  const col = document.getElementById('cat-column').value;
+  ld.catColumn = col;
+
+  const vals = [...new Set(ld.geojson.features.map(f => String(f.properties?.[col] ?? '')))].sort();
+  vals.forEach((v, i) => {
+    if (!ld.catColorMap[v]) ld.catColorMap[v] = autoColors[i % autoColors.length];
+  });
+
+  const listEl = document.getElementById('cat-color-list');
+  listEl.innerHTML = '';
+  const counts = {};
+  ld.geojson.features.forEach(f => {
+    const v = String(f.properties?.[col] ?? '');
+    counts[v] = (counts[v] || 0) + 1;
+  });
+
+  vals.forEach(v => {
+    const item = document.createElement('div');
+    item.className = 'cat-item';
+    item.innerHTML = `
+      <input type="color" class="cat-color" value="${ld.catColorMap[v]}" data-val="${v}">
+      <div class="cat-label" title="${v}">${v || '(空)'}</div>
+      <div class="cat-count">${counts[v] || 0}</div>
+    `;
+    item.querySelector('input').oninput = function() {
+      ld.catColorMap[this.dataset.val] = this.value;
+      applyCategoryStyle(ld);
+    };
+    listEl.appendChild(item);
+  });
+  applyCategoryStyle(ld);
+}
+
+function applyCategoryStyle(ld) {
+  refreshLayer(ld);
+  buildCatLegend(ld);
+}
+
+function randomizeCategoryColors() {
+  const ld = getSelectedLayer();
+  if (!ld || !ld.catColumn) return;
+  const vals = Object.keys(ld.catColorMap);
+  vals.forEach((v, i) => {
+    const hue = (i * 137.5) % 360;
+    ld.catColorMap[v] = hslToHex(hue, 70, 55);
+  });
+  document.querySelectorAll('.cat-color').forEach(input => {
+    input.value = ld.catColorMap[input.dataset.val] || '#888';
+  });
+  applyCategoryStyle(ld);
+}
+
+function hslToHex(h, s, l) {
+  s /= 100; l /= 100;
+  const a = s * Math.min(l, 1 - l);
+  const f = n => { const k = (n + h / 30) % 12; const c = l - a * Math.max(Math.min(k - 3, 9 - k, 1), -1); return Math.round(255 * c).toString(16).padStart(2, '0'); };
+  return `#${f(0)}${f(8)}${f(4)}`;
+}
+
+// ── Choropleth ─────────────────────────────────────────────────────────────
+function applyChoropleth() {
+  const ld = getSelectedLayer();
+  if (!ld) return;
+  const col = document.getElementById('choro-column').value;
+  if (!col) return;
+  ld.choroColumn = col;
+  ld.colorMode = 'choropleth';
+
+  const vals = ld.geojson.features.map(f => parseFloat(f.properties?.[col])).filter(v => !isNaN(v));
+  if (!vals.length) return;
+  ld.choroMin = Math.min(...vals);
+  ld.choroMax = Math.max(...vals);
+  ld.choroOpacity = parseFloat(document.getElementById('choro-opacity').value);
+
+  refreshLayer(ld);
+  buildChoroLegend(ld, col);
+}
+
+function getChoroplethColor(ld, val) {
+  const { choroMin, choroMax } = ld;
+  if (choroMax === choroMin) return colorSchemes[activeScheme].colors[0];
+  const t = (val - choroMin) / (choroMax - choroMin);
+  const steps = parseInt(document.getElementById('choro-steps').value);
+  const colors = colorSchemes[activeScheme].colors;
+  const idx = Math.min(Math.floor(t * steps), steps - 1);
+  const norm = idx / (steps - 1);
+  const ci = norm * (colors.length - 1);
+  const lo = Math.floor(ci), hi = Math.min(lo + 1, colors.length - 1);
+  return interpolateColor(colors[lo], colors[hi], ci - lo);
+}
+
+function interpolateColor(c1, c2, t) {
+  const h = s => parseInt(s, 16);
+  const r1 = h(c1.slice(1,3)), g1 = h(c1.slice(3,5)), b1 = h(c1.slice(5,7));
+  const r2 = h(c2.slice(1,3)), g2 = h(c2.slice(3,5)), b2 = h(c2.slice(5,7));
+  const r = Math.round(r1 + (r2-r1)*t).toString(16).padStart(2,'0');
+  const g = Math.round(g1 + (g2-g1)*t).toString(16).padStart(2,'0');
+  const b = Math.round(b1 + (b2-b1)*t).toString(16).padStart(2,'0');
+  return `#${r}${g}${b}`;
+}
+
+// ── Base style ─────────────────────────────────────────────────────────────
+function applyBaseStyle() {
+  const stroke = document.getElementById('base-stroke').value;
+  const weight = parseFloat(document.getElementById('base-weight').value);
+  const ptsize = parseInt(document.getElementById('base-ptsize').value);
+  layers.forEach(ld => {
+    ld.style.stroke = stroke;
+    ld.style.weight = weight;
+    ld.style.pointSize = ptsize;
+    refreshLayer(ld);
+  });
+  document.getElementById('man-stroke').value = stroke;
+  document.getElementById('man-weight').value = weight;
+  document.getElementById('man-weight-val').textContent = weight;
+}
+
+// ── Refresh layer ──────────────────────────────────────────────────────────
+function refreshLayer(ld) {
+  ld.featureMap.forEach((leafLayer, feature) => {
+    const s = getFeatureStyle(ld, feature);
+    if (typeof leafLayer.setRadius === 'function') {
+      leafLayer.setStyle(s);
+      leafLayer.setRadius(s.radius);
+    } else {
+      leafLayer.setStyle(s);
+    }
+  });
+}
+
+// ── Legend ─────────────────────────────────────────────────────────────────
+const legendEl = document.getElementById('legend');
+function hideLegend() { legendEl.style.display = 'none'; }
+
+function buildCatLegend(ld) {
+  const vals = Object.keys(ld.catColorMap).slice(0, 12);
+  legendEl.style.display = 'block';
+  legendEl.innerHTML = `<div class="legend-title">${ld.catColumn}</div>` +
+    vals.map(v => `<div class="legend-item"><div class="legend-swatch" style="background:${ld.catColorMap[v]}"></div><span style="color:#aaa;font-size:11px">${v || '(空)'}</span></div>`).join('');
+}
+
+function buildChoroLegend(ld, col) {
+  const steps = parseInt(document.getElementById('choro-steps').value);
+  const colors = colorSchemes[activeScheme].colors;
+  const { choroMin, choroMax } = ld;
+  const range = choroMax - choroMin;
+  legendEl.style.display = 'block';
+  let html = `<div class="legend-title">${col}</div>`;
+  for (let i = steps - 1; i >= 0; i--) {
+    const t = i / (steps - 1);
+    const val = choroMin + t * range;
+    const ci = t * (colors.length - 1);
+    const lo = Math.floor(ci), hi = Math.min(lo+1, colors.length-1);
+    const c = interpolateColor(colors[lo], colors[hi], ci - lo);
+    html += `<div class="legend-item"><div class="legend-swatch" style="background:${c}"></div><span style="color:#aaa;font-size:11px">${val.toFixed(1)}</span></div>`;
+  }
+  legendEl.innerHTML = html;
+}
+
+// ── Drawing tools ──────────────────────────────────────────────────────────
+function setTool(t) {
+  tool = t;
+  clearDraw();
+  ['btn-sel','btn-polygon','btn-line','btn-point'].forEach(id => {
+    document.getElementById(id).classList.toggle('active', id === 'btn-' + (t === 'select' ? 'sel' : t));
+  });
+  const hint = document.getElementById('draw-hint');
+  if (t === 'polygon') { hint.style.display = 'block'; hint.textContent = 'クリックで頂点追加 — ダブルクリックで完成'; }
+  else if (t === 'line') { hint.style.display = 'block'; hint.textContent = 'クリックで点追加 — ダブルクリックで完成'; }
+  else if (t === 'point') { hint.style.display = 'block'; hint.textContent = 'クリックでポイント追加'; }
+  else { hint.style.display = 'none'; }
+}
+
+map.on('click', e => {
+  if (tool === 'select') return;
+  const ll = e.latlng;
+  if (tool === 'point') {
+    const geojson = { type: 'FeatureCollection', features: [{ type: 'Feature', geometry: { type: 'Point', coordinates: [ll.lng, ll.lat] }, properties: {} }] };
+    addLayer(geojson, 'ポイント');
+    return;
+  }
+  drawPts.push([ll.lat, ll.lng]);
+  const m = L.circleMarker(ll, { radius: 3, color: '#5b8eff', fillColor: '#5b8eff', fillOpacity: 1, weight: 0 }).addTo(map);
+  drawTempMarkers.push(m);
+  if (drawPolyline) map.removeLayer(drawPolyline);
+  drawPolyline = L.polyline(drawPts, { color: '#5b8eff', weight: 1.5, dashArray: '4' }).addTo(map);
+});
+
+map.on('dblclick', e => {
+  if (tool === 'select' || tool === 'point') return;
+  if (drawPts.length < 2) return;
+  const coords = drawPts.map(p => [p[1], p[0]]);
+  let geojson;
+  if (tool === 'polygon') {
+    coords.push(coords[0]);
+    geojson = { type: 'FeatureCollection', features: [{ type: 'Feature', geometry: { type: 'Polygon', coordinates: [coords] }, properties: {} }] };
+    addLayer(geojson, 'ポリゴン');
+  } else if (tool === 'line') {
+    geojson = { type: 'FeatureCollection', features: [{ type: 'Feature', geometry: { type: 'LineString', coordinates: coords }, properties: {} }] };
+    addLayer(geojson, 'ライン');
+  }
+  clearDraw();
+});
+
+function clearDraw() {
+  drawPts = [];
+  if (drawPolyline) { map.removeLayer(drawPolyline); drawPolyline = null; }
+  drawTempMarkers.forEach(m => map.removeLayer(m));
+  drawTempMarkers = [];
+}
+
+// ── Delete ─────────────────────────────────────────────────────────────────
+function deleteSelected() {
+  const ld = getSelectedLayer();
+  if (!ld) { setStatus('削除するレイヤーを選択してください'); return; }
+  map.removeLayer(ld.leafLayer);
+  layers = layers.filter(l => l.id !== ld.id);
+  selectedLayerId = layers.length > 0 ? layers[layers.length-1].id : null;
+  if (layers.length === 0) document.getElementById('layer-empty').style.display = '';
+  renderLayerList();
+  hideLegend();
+  setStatus('レイヤーを削除しました');
+}
+
+// ── Export GeoJSON ─────────────────────────────────────────────────────────
+function exportGeoJSON() {
+  if (!layers.length) { setStatus('エクスポートするレイヤーがありません'); return; }
+  const allFeatures = layers.flatMap(l => l.geojson.features);
+  const data = JSON.stringify({ type: 'FeatureCollection', features: allFeatures }, null, 2);
+  const blob = new Blob([data], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'export.geojson';
+  a.click();
+  setStatus('GeoJSONを保存しました');
+}
+
+// ── Export PNG ─────────────────────────────────────────────────────────────
+function exportPNG() {
+  setStatus('PNG生成中...');
+  const mapEl = document.getElementById('map');
+  const W = mapEl.offsetWidth, H = mapEl.offsetHeight;
+  const canvas = document.createElement('canvas');
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext('2d');
+
+  // Background
+  ctx.fillStyle = '#1a1a2e';
+  ctx.fillRect(0, 0, W, H);
+
+  // Draw each layer
+  layers.forEach(ld => {
+    if (!ld.visible) return;
+    ld.geojson.features.forEach(feature => {
+      const s = getFeatureStyle(ld, feature);
+      ctx.fillStyle = hexToRgba(s.fillColor, s.fillOpacity || ld.choroOpacity || 0.7);
+      ctx.strokeStyle = s.color;
+      ctx.lineWidth = s.weight;
+
+      const proj = coord => {
+        const pt = map.latLngToContainerPoint(L.latLng(coord[1], coord[0]));
+        return [pt.x, pt.y];
+      };
+
+      const geom = feature.geometry;
+      if (!geom) return;
+
+      if (geom.type === 'Point') {
+        const [x, y] = proj(geom.coordinates);
+        ctx.beginPath();
+        ctx.arc(x, y, s.radius || 6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+      } else if (geom.type === 'LineString') {
+        drawPath(ctx, [geom.coordinates], false, proj);
+        ctx.stroke();
+      } else if (geom.type === 'MultiLineString') {
+        geom.coordinates.forEach(ring => { drawPath(ctx, [ring], false, proj); ctx.stroke(); });
+      } else if (geom.type === 'Polygon') {
+        drawPath(ctx, geom.coordinates, true, proj);
+        ctx.fill('evenodd');
+        ctx.stroke();
+      } else if (geom.type === 'MultiPolygon') {
+        geom.coordinates.forEach(poly => {
+          drawPath(ctx, poly, true, proj);
+          ctx.fill('evenodd');
+          ctx.stroke();
+        });
+      }
+    });
+  });
+
+  // Draw legend if visible
+  if (legendEl.style.display !== 'none') {
+    const items = legendEl.querySelectorAll('.legend-item');
+    const lx = W - 160, ly = H - 30 - items.length * 22 - 30;
+    ctx.fillStyle = 'rgba(15,15,17,0.88)';
+    ctx.beginPath();
+    roundRect(ctx, lx - 10, ly - 20, 155, items.length * 22 + 36, 6);
+    ctx.fill();
+    ctx.fillStyle = '#666';
+    ctx.font = '10px monospace';
+    ctx.fillText(legendEl.querySelector('.legend-title')?.textContent || '', lx, ly - 5);
+    items.forEach((item, i) => {
+      const swatch = item.querySelector('.legend-swatch');
+      const label = item.querySelector('span');
+      ctx.fillStyle = swatch ? swatch.style.background : '#888';
+      ctx.fillRect(lx, ly + i * 22, 14, 14);
+      ctx.fillStyle = '#aaa';
+      ctx.font = '11px sans-serif';
+      ctx.fillText(label?.textContent || '', lx + 20, ly + i * 22 + 11);
+    });
+  }
+
+  // Attribution
+  ctx.fillStyle = 'rgba(80,80,90,0.8)';
+  ctx.font = '10px sans-serif';
+  ctx.fillText('© OpenStreetMap © CARTO', 6, H - 6);
+
+  canvas.toBlob(blob => {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'map_export.png';
+    a.click();
+    setStatus('PNGをダウンロードしました');
+  });
+}
+
+function drawPath(ctx, rings, close, proj) {
+  ctx.beginPath();
+  rings.forEach(ring => {
+    ring.forEach((coord, i) => {
+      const [x, y] = proj(coord);
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    });
+    if (close) ctx.closePath();
+  });
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+function hexToRgba(hex, alpha) {
+  if (!hex || !hex.startsWith('#')) return `rgba(100,100,100,${alpha})`;
+  const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+// ── Map click deselect ─────────────────────────────────────────────────────
+map.on('click', () => {
+  if (tool !== 'select') return;
+  selectedFeatureLayer = null;
+});
+
+// ── Init ───────────────────────────────────────────────────────────────────
+setTool('select');
+</script>
+</body>
+</html>
